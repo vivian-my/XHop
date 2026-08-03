@@ -99,21 +99,6 @@ passages[answer_pos] = zh[i]["answers"][answer_pos]
   
 }
 ```
-
-Every record carries 20 passages total (gold + distractors), so more hops means
-proportionally fewer distractors.
-
-### `hop_seq`
-
-`answers[hop_seq[0]]` is the bridging hop; `answers[hop_seq[-1]]` is the answer-bearing
-one. The distinction carries the finding — models are far more sensitive to the language
-of the answer-bearing hop than the bridging one.
-
-> **`hop_seq_verified` is `false` for `three_hop` and `four_hop`.** There `hop_seq` is the
-> identity order and records *file order, not verified reasoning order* — those files never
-> went through a hop-ordering pass. Do not use it for per-hop analysis at 3 and 4 hops
-> without establishing the ordering yourself.
-
 ### Two-Hop Question decomposition
 
 The 176 HotpotQA records carry a gold decomposition into two single-hop questions, stored
@@ -139,83 +124,7 @@ r["sub_q1"]["answer"]      # "Shirley Temple"  <- the bridge entity
 r["sub_q2"]["question"]    # hop 2 — asks about that entity
                            # "Quel poste gouvernemental occupait Shirley Temple ?"
 r["sub_q2"]["answer"]      # "Chef du Protocole"  == r["answer"], always
-
-# Feeding sub_q1's answer into sub_q2 only works where the bridge survived
-# translation. Filter on chain_ok; use bridge_match == "exact" if you need to
-# substitute the string verbatim rather than just check it is present.
-usable = [x for x in hotpot if x["chain_ok"]]              # 163 of 176 in French
-verbatim = [x for x in hotpot if x["bridge_match"] == "exact"]   # 113 of 176
 ```
-
-MuSiQue records carry `"sub_q1": null`, so `[x for x in rows if x["sub_q1"]]` selects the
-decomposable half of the 2-hop split.
-
-Because the language files are aligned, the sub-questions can be drawn from one language
-and the passages from another — a decomposed question in English against Chinese evidence,
-for instance:
-
-```python
-en = [json.loads(l) for l in open("data/two_hop/hotpotqa/en.jsonl", encoding="utf-8")]
-zh = [json.loads(l) for l in open("data/two_hop/hotpotqa/zh.jsonl", encoding="utf-8")]
-
-i = 0
-assert en[i]["id"] == zh[i]["id"]          # same record, guaranteed by alignment
-bridge_pos, answer_pos = en[i]["hop_seq"]
-
-sub_q1 = en[i]["sub_q1"]["question"]       # English sub-question
-passage = zh[i]["answers"][bridge_pos]     # Chinese passage that answers it
-```
-
-Sub-questions were translated independently per language, which broke the link between
-them. Two repairs are applied at build time, neither rewriting translated text:
-`sub_q2.answer` is normalized to the record's `answer` (223 records; the original is kept
-in `answer_raw`), and the bridge entity is *classified* rather than substituted — Russian
-and Arabic inflect it (`Страсбург` → `Страсбура`), which is correct translation that a
-substring test wrongly rejects.
-
-| `bridge_match` | en | fr | ru | ar | zh | |
-|---|---:|---:|---:|---:|---:|---|
-| `exact` | 172 | 113 | 65 | 87 | 83 | present verbatim |
-| `normalized` | 0 | 20 | 4 | 1 | 3 | case / diacritics / punctuation |
-| `inflected` | 0 | 30 | 96 | 82 | 40 | morphological or word-order variant |
-| `latin_untranslated` | 0 | 7 | 8 | 4 | 29 | English name retained — a defect |
-| `absent` | 4 | 6 | 3 | 2 | 21 | bridge missing — a defect |
-| **`chain_ok`** | **172** | **163** | **165** | **170** | **126** | first three kinds |
-
-Filter on `chain_ok` before chaining `sub_q1` → `sub_q2`; filter on
-`bridge_match == "exact"` if you need verbatim substitution.
-
-## Repository layout
-
-```
-data/          the dataset
-scripts/       build.py · validate.py · make_cross_lingual.py · make_combined.py
-               make_figure.py — regenerates assets/example.svg from the data
-examples/      quickstart.py
-assets/        the README figure
-LICENSES/      per-source terms
-DATA_CARD.md   provenance, limitations, known defects
-```
-
-```bash
-python scripts/validate.py     # alignment, schema, hop counts, per-language script checks
-sha256sum -c CHECKSUMS.sha256  # verify a download
-```
-
-## Licensing
-
-MuSiQue and HotpotQA are distributed under **different** licenses, and HotpotQA's is
-copyleft. They are shipped in separate files so either can be used alone under its own
-terms. `scripts/make_combined.py` produces a derivative of both, which inherits the more
-restrictive terms. See [`LICENSES/`](LICENSES/).
-
-## Limitations
-
-Read [`DATA_CARD.md`](DATA_CARD.md) before publishing results. In brief: translations are
-machine-produced and unverified; `hop_seq` is unverified at 3 and 4 hops; decomposition
-chains still break on 4–29 records per language (worst in Chinese); and answer strings
-sometimes stay in Latin script in non-Latin languages, which depresses exact-match scoring
-in a way that conflates *factual correctness* with *answering in the expected language*.
 
 ## Citation
 
